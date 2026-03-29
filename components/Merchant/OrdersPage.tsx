@@ -300,7 +300,7 @@ useEffect(() => {
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
 
-    const companyName = companyInfo?.company_name || companyInfo?.name || 'Entreprise'
+    const companyName = companyInfo?.company_name || companyInfo?.name || 'Entreprise.....'
     const companyEmail = companyInfo?.company_email || companyInfo?.email || ''
     const companyPhone = companyInfo?.company_phone || companyInfo?.phone || ''
     const companyAddress = companyInfo?.company_address || companyInfo?.address || ''
@@ -967,7 +967,7 @@ useEffect(() => {
                 clientName: group.client?.name || 'Client',
                 orderGroupId: groupId,
                 status: newStatus,
-                currency: companyInfo?.currency || 'DZD',
+                currency: companyInfo?.currency || '',
                 totalAmount: group.total_amount
               })
             }).catch(e => console.error('Erreur envoi email statut:', e))
@@ -1031,7 +1031,7 @@ useEffect(() => {
         companyInfo?.company_phone ||
         '0560277868';
       const companyAddress = companyInfo?.adresse_de_l_entreprise || companyInfo?.company_address || 'Alger, Algérie';
-      const currency = companyInfo?.devise || companyInfo?.currency || 'DZD';
+      const currency = companyInfo?.devise || companyInfo?.currency || '';
 
       const formatCurrencyBL = (amount: number) => {
         return new Intl.NumberFormat('fr-DZ', {
@@ -1039,10 +1039,11 @@ useEffect(() => {
           currency: 'DZD',
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
-        }).format(amount).replace('DZD', '').trim() + ' DZD';
+        }).format(amount).replace('', '').trim() + ' ';
       };
 
-      const htmlContent = `<!DOCTYPE html>
+      const htmlContent = 
+	  `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -1382,219 +1383,206 @@ useEffect(() => {
 </style>
 </head>
 <body>
-  <!-- En-tête professionnel -->
-  <div class="header-section">
-    <div class="company-info">
-      <div class="company-name">${merchantInfo?.nom || 'DiagnoSphere'}</div>
-      <div class="company-details">
-        ${[merchantInfo?.company_address || merchantInfo?.address || '', merchantInfo?.company_city || merchantInfo?.city || ''].filter(Boolean).join(', ') || '—'}<br>
-        Tél: ${merchantInfo?.company_phone || merchantInfo?.phone || merchantInfo?.telephone || '—'} | Email: ${merchantInfo?.company_email || merchantInfo?.email || '—'}
-      </div>
+ <div class="header-minimal">
+  <div class="header-left">
+    <div class="brand-name">${merchantInfo?.nom || 'DiagnoSphere'}</div>
+    <div class="brand-contact">
+      ${[merchantInfo?.company_address || merchantInfo?.address || '', merchantInfo?.company_city || merchantInfo?.city || ''].filter(Boolean).join(', ')}<br>
+      Tél: ${merchantInfo?.company_phone || merchantInfo?.phone || '—'} | ${merchantInfo?.company_email || merchantInfo?.email || '—'}
     </div>
-    <div class="document-badge">
-      <div class="document-title">BON DE LIVRAISON</div>
-      <div class="document-ref">N° ${deliveryNoteNumber}</div>
-      <div class="document-ref" style="color:#3b82f6;">Date: ${dateFormatted}</div>
+  </div>
+  <div class="header-right">
+    <div class="doc-badge">BON DE LIVRAISON</div>
+    <div class="doc-meta">N° <strong>${deliveryNoteNumber}</strong></div>
+    <div class="doc-meta" style="color:#3b82f6;">Date: ${dateFormatted}</div>
+  </div>
+</div>
+
+<div class="fiscal-strip">
+  <span><strong>NIF:</strong> ${merchantInfo?.nif || '—'}</span>
+  <span><strong>RC:</strong> ${merchantInfo?.rc || '—'}</span>
+  <span><strong>AI:</strong> ${merchantNumeroAi || '—'}</span>
+  <span><strong>NIS:</strong> ${merchantInfo?.nis || '—'}</span>
+</div>
+
+<div class="info-grid">
+  <div class="info-card">
+    <div class="card-tag">DESTINATAIRE</div>
+    <div class="client-main">
+      <div class="client-name">${clientInfo?.nom || clientInfo?.name || 'DR ANWAR'}</div>
+      <div class="client-sub">
+        <span>ID: ${clientInfo?.client_id || '—'}</span> | 
+        <span><i class="fas fa-phone"></i> ${clientTelephone || '—'}</span>
+      </div>
+      <div class="client-sub">${clientInfo?.ville || '—'} ${clientInfo?.code_postal || ''}</div>
+    </div>
+    
+    <div class="client-fiscal-tags">
+      ${clientInfo?.rc ? `<span class="tag">RC: ${clientInfo.rc}</span>` : ''}
+      ${clientInfo?.fiscal_number ? `<span class="tag">NIF: ${clientInfo.fiscal_number}</span>` : ''}
+      ${clientInfo?.ai_number ? `<span class="tag">AI: ${clientInfo.ai_number}</span>` : ''}
     </div>
   </div>
 
-  <!-- Grille fiscale avec les vraies données de la BDD -->
-  <div class="fiscal-grid">
-    <div class="fiscal-item">
-      <span class="fiscal-label">NIF</span>
-      <span class="fiscal-value">${merchantInfo?.nif || '—'}</span>
-    </div>
-    <div class="fiscal-item">
-      <span class="fiscal-label">RC</span>
-      <span class="fiscal-value">${merchantInfo?.rc || '—'}</span>
-    </div>
-    <div class="fiscal-item">
-      <span class="fiscal-label">AI</span>
-      <span class="fiscal-value">${merchantNumeroAi || 'N/A'}</span>
-    </div>
-    <div class="fiscal-item">
-      <span class="fiscal-label">NIS</span>
-      <span class="fiscal-value">${merchantInfo?.nis || 'N/A'}</span>
-    </div>
-  </div>
-
-  <!-- Informations client avec les vraies données -->
-<!-- Parties (Client & Delivery) -->
-<div class="parties-container">
-  <!-- Carte Client avec infos fiscales côte à côte -->
-  <div class="party-card">
-  <div class="party-title">MEDECIN</div>
-    <div class="party-content">
-      <div class="client-info-container">
-        <!-- Colonne gauche : informations principales -->
-        <div class="client-info-left">
-          <strong>${clientInfo?.nom || clientInfo?.name || 'DR ANWAR'}</strong>
-          <p><i class="fas fa-id-card"></i> N°: ${clientInfo?.client_id || 'MED002'}</p>
-          <p><i class="fas fa-phone"></i> ${clientTelephone || '065978445'}</p>
-          <p><i class="fas fa-map-marker-alt"></i> ${clientInfo?.ville || clientInfo?.city || 'Alger'}</p>
-          <p><i class="fas fa-mail-bulk"></i> ${clientInfo?.code_postal || clientInfo?.postal_code || '16000'}</p>
-          <p><i class="fas fa-envelope"></i> ${clientInfo?.email || 'email@example.com'}</p>
-        </div>
-        
-        <!-- Colonne droite : informations fiscales -->
-        <div class="client-info-right">
-          <div class="fiscal-info-title">Informations fiscales</div>
-          
-          ${clientInfo?.rc && clientInfo.rc !== 'NULL' && clientInfo.rc !== 'EMPTY' ? `
-            <div class="fiscal-item-small">
-              <span class="label">RC:</span>
-              <span class="value">${clientInfo.rc}</span>
-            </div>
-          ` : ''}
-          
-          ${clientInfo?.fiscal_number && clientInfo.fiscal_number !== 'EMPTY' ? `
-            <div class="fiscal-item-small">
-              <span class="label">N° Fiscal:</span>
-              <span class="value">${clientInfo.fiscal_number}</span>
-            </div>
-          ` : ''}
-          
-          ${clientNumeroFiscal && clientNumeroFiscal !== 'VIDE' ? `
-            <div class="fiscal-item-small">
-              <span class="label">N° Fiscal (alt):</span>
-              <span class="value">${clientNumeroFiscal}</span>
-            </div>
-          ` : ''}
-          
-          ${clientInfo?.agrement_number && clientInfo.agrement_number !== 'EMPTY' ? `
-            <div class="fiscal-item-small">
-              <span class="label">N° Agrément:</span>
-              <span class="value">${clientInfo.agrement_number}</span>
-            </div>
-          ` : ''}
-          
-          ${clientInfo?.ai_number && clientInfo.ai_number !== 'EMPTY' ? `
-            <div class="fiscal-item-small">
-              <span class="label">N° AI:</span>
-              <span class="value">${clientInfo.ai_number}</span>
-            </div>
-          ` : ''}
-          
-          ${!clientInfo?.rc && !clientInfo?.fiscal_number && !clientInfo?.agrement_number && !clientInfo?.ai_number ? `
-            <div style="color: #94a3b8; font-size: 7.5pt; text-align: center; padding: 5px 0;">
-              Aucune information fiscale
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    </div>
-  </div>
-  
-  <!-- Carte Livraison -->
-  <div class="party-card">
-    <div class="party-title">LIVRAISON</div>
-    <div class="party-content">
-      <div class="delivery-info">
-        <div class="delivery-row">
-          <span class="delivery-label">Date</span>
-          <span class="delivery-value">${dateFormatted}</span>
-        </div>
-        <div class="delivery-row">
-          <span class="delivery-label">Commande</span>
-          <span class="delivery-value">${group?.order_group_id ? normalizeOrderRef(group.order_group_id) : 'N/A'}</span>
-        </div>
-        <div class="delivery-row">
-          <span class="delivery-label">Articles</span>
-          <span class="delivery-value">${group?.total_items || 0}</span>
-        </div>
-        <div class="delivery-row">
-          <span class="delivery-label">Paiement</span>
-          <span class="payment-badge">${clientInfo?.payment_mode && clientInfo.payment_mode !== 'EMPTY' ? clientInfo.payment_mode : (clientInfo?.mode_de_paiement || 'Non spécifié')}</span>
-        </div>
-      </div>
+  <div class="info-card">
+    <div class="card-tag">LOGISTIQUE</div>
+    <div class="log-details">
+      <div class="log-row"><span>Commande:</span> <strong>${group?.order_group_id ? normalizeOrderRef(group.order_group_id) : '—'}</strong></div>
+      <div class="log-row"><span>Articles:</span> <strong>${group?.total_items || 0}</strong></div>
+      <div class="log-row"><span>Paiement:</span> <span class="pay-mode">${clientInfo?.payment_mode || 'Non spécifié'}</span></div>
     </div>
   </div>
 </div>
 
+<style>
+  /* CSS pour le rendu minimaliste */
+  .header-minimal { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; border-bottom: 2px solid #1e293b; padding-bottom: 8px; }
+  .brand-name { font-size: 16pt; font-weight: 800; color: #1e293b; line-height: 1; }
+  .brand-contact { font-size: 8pt; color: #64748b; margin-top: 4px; }
+  .doc-badge { background: #1e293b; color: white; padding: 4px 10px; font-size: 10pt; font-weight: 700; border-radius: 4px; text-align: right; }
+  .doc-meta { font-size: 9pt; text-align: right; margin-top: 2px; }
+
+  .fiscal-strip { display: flex; justify-content: space-between; background: #f8fafc; padding: 5px 10px; border-radius: 4px; font-size: 7.5pt; color: #475569; margin-bottom: 12px; border: 1px solid #e2e8f0; }
+
+  .info-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px; margin-bottom: 15px; }
+  .info-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; position: relative; }
+  .card-tag { font-size: 6.5pt; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 5px; }
+  
+  .client-name { font-size: 11pt; font-weight: 700; color: #1e293b; }
+  .client-sub { font-size: 8.5pt; color: #475569; margin-top: 2px; }
+  .client-fiscal-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { font-size: 7pt; background: #eff6ff; color: #1d4ed8; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+
+  .log-details { font-size: 8.5pt; }
+  .log-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #f1f5f9; }
+  .pay-mode { color: #059669; font-weight: 700; text-transform: uppercase; font-size: 7.5pt; }
+</style>
   <!-- Tableau des produits avec Détails -->
   <div class="products-section">
     <table class="products-table">
-      <thead>
+  <thead>
+    <tr>
+      <th>Désignation Produit</th>
+      <th>Volume</th>
+      <th>Lot / Référence</th>
+      <th>Origine</th>
+      <th class="text-right">Qté</th>
+      <th class="text-right"></th>
+      <th class="text-right"></th>
+    </tr>
+  </thead>
+  <tbody>
+    ${group.orders.map((order: any) => {
+      const product = products.find((p: any) => String(p.id) === String(order.product_id));
+      const totalRow = (product?.price || 0) * (order.quantity || 1);
+      
+      return `
         <tr>
-          <th>Produit</th>
-          <th>Lot/Référence</th>
-          <th>Provenance</th>
-          <th>Qté</th>
-          <th>Prix unit.</th>
-          <th>Total</th>
+          <td class="product-name-cell">${product?.name || 'Produit'}</td>
+          <td class="nowrap">${product?.volume_ml || '-'} ml</td>
+          <td>
+            <div class="ref-container">
+              ${product?.lot_number ? `<span>L: ${product.lot_number}</span>` : ''}
+              ${product?.reference_code ? `<span>R: ${product.reference_code}</span>` : ''}
+            </div>
+          </td>
+          <td class="nowrap">${product?.provenance || 'N/A'}</td>
+          <td class="text-right font-bold">${order.quantity || 1}</td>
+          
         </tr>
-      </thead>
-      <tbody>
-        ${group.orders.map((order: any) => {
-          const product = products.find((p: any) => String(p.id) === String(order.product_id));
-          return `
-            <tr>
-              <td>
-                <div class="product-name">${product?.name || 'Produit'}</div>
-                <div class="product-details">
-                  <span class="product-detail-item">
-                    <span class="product-detail-label">Volume:</span>
-                    <span class="product-detail-value">${product?.volume_ml || '-'} ml</span>
-                  </span>
-                  ${product?.provenance ? `
-                    <span class="product-detail-item">
-                      <span class="product-detail-label">Origine:</span>
-                      <span class="product-detail-value">${product.provenance}</span>
-                    </span>
-                  ` : ''}
-                </div>
-              </td>
-              <td>
-                ${product?.lot_number ? `
-                  <div><strong>Lot:</strong> ${product.lot_number}</div>
-                ` : ''}
-                ${product?.reference_code ? `
-                  <div><strong>Réf:</strong> ${product.reference_code}</div>
-                ` : ''}
-              </td>
-              <td>${product?.provenance || 'N/A'}</td>
-              <td class="price-cell">${order.quantity || 1}</td>
-              <td class="price-cell">${formatCurrencyBL(product?.price || 0)}</td>
-              <td class="total-cell">${formatCurrencyBL((product?.price || 0) * (order.quantity || 1))}</td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>
+      `;
+    }).join('')}
+  </tbody>
+</table>
 
-  <!-- Totaux -->
+<style>
+  .products-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    table-layout: auto; /* Laisse le tableau s'ajuster */
+  }
+
+  .products-table th {
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 10px;
+    border-bottom: 2px solid #1e293b;
+    text-align: left;
+  }
+
+  .products-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 8.5pt;
+    color: #1e293b;
+    vertical-align: middle;
+    white-space: nowrap; /* Empêche les retours à la ligne par défaut */
+  }
+
+  /* Colonne produit autorisée à s'étendre */
+  .product-name-cell {
+    white-space: normal !important; /* Permet le retour à la ligne uniquement pour le nom long */
+    font-weight: 600;
+    min-width: 150px;
+  }
+
+  .ref-container {
+    display: flex;
+    gap: 8px;
+    font-size: 7.5pt;
+    color: #64748b;
+  }
+
+  .ref-container span {
+    background: #f1f5f9;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .text-right { text-align: right !important; }
+  .font-bold { font-weight: 700; }
+  .nowrap { white-space: nowrap; }
+
+  /* Évite que le tableau ne soit coupé par le footer fixe */
+  body {
+    padding-bottom: 180px; 
+  }
+</style>
+  </div>
+<div class="document">
+
+  <!-- HEADER -->
+  <div class="header-section">...</div>
+
+  <!-- PRODUITS -->
+  <div class="products-section">...</div>
+
+  <!-- BAS -->
   <div class="totals-section">
-    <div class="totals-box">
-      <div class="total-line">
-        <span>Sous-total:</span>
-        <span>${formatCurrencyBL(group.total_amount)} ${currency}</span>
-      </div>
-      <div class="total-line">
-        <span>Frais de livraison:</span>
-        <span>0 ${currency}</span>
-      </div>
-      <div class="total-line grand-total">
-        <span>TOTAL</span>
-        <span>${formatCurrencyBL(group.total_amount)} ${currency}</span>
+
+ 
+
+    <!-- Signature -->
+    <div class="stamp-section">
+      <div class="signature-area">
+        <div class="signature-line"></div>
+        <div>Cachet et signature</div>
+        <div style="margin-top: 10px; font-size: 8pt;">Bon à servir</div>
       </div>
     </div>
-  </div>
 
-  <!-- Signature -->
-  <div class="stamp-section">
-    <div class="signature-area">
-      <div class="signature-line"></div>
-      <div>Cachet et signature</div>
-      <div style="margin-top: 10px; font-size: 8pt;">Bon à servir</div>
+    <!-- Footer -->
+    <div class="footer">
+      BL ${deliveryNoteNumber} - Généré le ${new Date().toLocaleString('fr-FR')} - Document commercial — Non assujetti à la TVA
     </div>
+
   </div>
 
-  <!-- Pied de page -->
-  <div class="footer">
-    BL ${deliveryNoteNumber} - Généré le ${new Date().toLocaleString('fr-FR')} - Document commercial — Non assujetti à la TVA
-  </div>
-
+</div>
   <script>
     window.onload = () => {
       window.print();
@@ -2154,6 +2142,5 @@ useEffect(() => {
     </>
   );
 }
-
 
 
