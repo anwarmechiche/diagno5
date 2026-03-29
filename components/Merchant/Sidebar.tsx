@@ -2,7 +2,6 @@
 
 import type { LucideIcon } from 'lucide-react'
 import {
-  BellRing,
   Boxes,
   FileText,
   LayoutDashboard,
@@ -17,7 +16,6 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import styles from './MerchantTheme.module.css'
 
 interface SidebarProps {
@@ -83,7 +81,6 @@ export default function Sidebar({
     { id: 'clients', label: 'Médecins', icon: Users },
     { id: 'orders', label: 'Commandes', icon: ShoppingCart },
     { id: 'invoices', label: 'Factures', icon: FileText },
-    { id: 'notifications', label: 'Notifications', icon: BellRing },
     { id: 'stock', label: 'Stock', icon: Boxes },
     { id: 'settings', label: 'Paramètres', icon: Settings },
   ]
@@ -109,119 +106,104 @@ export default function Sidebar({
 
   return (
     <div className={styles.vars} data-theme={theme}>
-      <AnimatePresence>
-        {!isOpen && (
-          <motion.button
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            type="button"
-            aria-label="Ouvrir le menu"
-            onClick={() => setIsOpen(true)}
-            className="fixed left-0 top-6 z-[60] flex h-10 w-10 items-center justify-center rounded-r-xl border border-slate-200/50 dark:border-white/10 bg-white/40 dark:bg-black/40 backdrop-blur-xl shadow-lg transition-all text-[#714B67] dark:text-emerald-400"
-          >
-            <Menu className="h-6 w-6" />
-          </motion.button>
-        )}
-      </AnimatePresence>
+    <>
+      {!isOpen && (
+        <button
+          type="button"
+          aria-label="Ouvrir le menu"
+          onClick={() => setIsOpen(true)}
+          className="fixed left-4 top-4 z-[60] flex h-10 w-10 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[color:var(--cardStrong)] backdrop-blur-md shadow-2xl focus:outline-none focus:ring-2 focus:ring-[color:var(--accentBorder)]"
+        >
+          <Menu className="h-5 w-5 text-[color:var(--text)]" />
+        </button>
+      )}
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
-            onClick={() => setIsOpen(false)}
-          />
-        )}
-      </AnimatePresence>      <motion.aside
-        initial={false}
-        animate={{ 
-          x: isOpen ? 0 : -260,
-        }}
-        transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-64 border-r border-slate-200/50 dark:border-white/5 bg-white/40 dark:bg-black/40 backdrop-blur-[40px] transition-colors ${
-          !isOpen && 'pointer-events-none'
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[color:var(--border)] bg-[color:var(--cardStrong)] backdrop-blur-md transition-all duration-300 ease-in-out ${
+          isOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between p-6 mb-2">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#714B67] to-[#5a3a52] flex items-center justify-center text-[10px] font-black text-white">
+        <div className="flex items-center justify-between border-b border-[color:var(--border)] p-5">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded bg-[color:var(--accentSolid)] text-[10px] font-black text-[color:var(--accentOn)]">
               DS
             </div>
-            <span className="font-bold tracking-tight text-slate-800 dark:text-white text-sm">
-              DIAGNO<span className="text-[#714B67] dark:text-emerald-400">SPHÈRE</span>
+            <span className="font-bold tracking-tight text-[color:var(--text)]">
+              DIAGNO<span className="text-[color:var(--accentSolid)]">SPHÈRE</span>
             </span>
           </div>
-          {isOpen && (
+          <div className="flex items-center gap-2">
             <button
+              type="button"
+              aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+              onClick={toggleTheme}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--border)] text-[color:var(--textMuted)] hover:bg-[color:var(--accentBg)] hover:text-[color:var(--text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--accentBorder)]"
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Fermer le menu"
               onClick={() => setIsOpen(false)}
-              className="lg:hidden p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[color:var(--textMuted)] hover:bg-[color:var(--accentBg)] hover:text-[color:var(--text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--accentBorder)]"
             >
               <X className="h-4 w-4" />
             </button>
-          )}
+          </div>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-2 scrollbar-hide">
+        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {menuItems.map((item) => {
             const isActive = activeTab === item.id
             return (
               <button
                 key={item.id}
                 type="button"
+                aria-current={isActive ? 'page' : undefined}
                 onClick={() => handleNavigation(item.id)}
-                className={`group relative flex w-full items-center gap-3.5 rounded-xl px-4 py-3 text-[12px] font-semibold transition-all duration-200 ${
+                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-[13px] font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[color:var(--accentBorder)] ${
                   isActive
-                    ? 'bg-[#714B67]/5 dark:bg-emerald-500/5 text-[#714B67] dark:text-emerald-400'
-                    : 'text-slate-500 dark:text-zinc-500 hover:bg-slate-500/5 hover:text-slate-900 dark:hover:text-slate-200'
+                    ? 'border-[color:var(--accentBorder)] bg-[color:var(--accentBg)] text-[color:var(--text)]'
+                    : 'border-transparent text-[color:var(--textMuted)] hover:border-[color:var(--border)] hover:bg-[color:var(--card)] hover:text-[color:var(--text)]'
                 }`}
               >
                 <item.icon
-                  className={`h-4 w-4 shrink-0 transition-all ${
-                    isActive ? 'text-[#714B67] dark:text-emerald-400 scale-110' : 'text-slate-400 group-hover:text-slate-600'
+                  className={`h-4 w-4 shrink-0 ${
+                    isActive ? 'text-[color:var(--accentSolid)]' : 'text-[color:var(--textMuted)]'
                   }`}
-                  strokeWidth={isActive ? 2.5 : 2}
                 />
-                <span className="tracking-wide">{item.label}</span>
-                {isActive && (
-                  <motion.div 
-                    layoutId="proIndicator"
-                    className="absolute left-0 w-1 h-5 bg-[#714B67] dark:bg-emerald-500 rounded-r-full"
-                  />
-                )}
+                <span>{item.label}</span>
               </button>
             )
           })}
         </nav>
 
-        <div className="p-4 border-t border-slate-200/50 dark:border-white/5 space-y-3">
-          <div className="flex items-center gap-3 px-3 py-2">
-            <div className="h-8 w-8 rounded-full bg-[#714B67]/10 dark:bg-emerald-500/10 flex items-center justify-center font-bold text-[11px] text-[#714B67] dark:text-emerald-400 border border-[#714B67]/20 dark:border-emerald-500/20">
+        <div className="space-y-2 border-t border-[color:var(--border)] p-3">
+          <div className="flex items-center gap-2 rounded-lg bg-[color:var(--card)] p-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--accentBorder)] bg-[color:var(--accentBg)] text-[10px] font-bold text-[color:var(--accentSolid)]">
               {user?.name?.charAt(0) || 'U'}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase letter-spacing-wider">{user?.name || 'Admin'}</p>
-            </div>
-            <button
-               onClick={toggleTheme}
-               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
-            >
-               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <p className="truncate text-xs font-semibold text-[color:var(--text)]">{user?.name || 'Admin'}</p>
           </div>
 
           <button
             type="button"
             onClick={onLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-[11px] font-bold text-red-500 hover:bg-red-500/5 transition-all"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-medium text-[color:var(--gold)] transition-colors hover:bg-[rgba(201,168,76,0.12)]"
           >
             <LogOut className="h-4 w-4" />
-            <span>Déconnexion</span>
+            <span>Quitter</span>
           </button>
         </div>
-      </motion.aside>
+      </aside>
+    </>
     </div>
   )
 }
