@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Facture {{INVOICE_NUMBER}}</title>
+    <style>
+      :root {
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #d1d5db;
+        --accent: #0f172a;
+        --accent-soft: #eef2ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Inter", "Segoe UI", sans-serif;
+        background: #ffffff;
+        color: var(--ink);
+      }
+      @page {
+        size: A4;
+        margin: 18mm;
+      }
+      .page {
+        min-height: 297mm;
+        padding: 20mm;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        background: #fff;
+        justify-content: flex-start;
+      }
+      .top-zone {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+      .company-block {
+        border-bottom: 2px solid var(--line);
+        padding-bottom: 12px;
+      }
+      .label {
+        font-size: 0.65rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 4px;
+        display: block;
+      }
+      .company-name {
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      .company-contact {
+        font-size: 0.85rem;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      .document-card {
+        border: 1px solid #cbd5f5;
+        border-radius: 16px;
+        padding: 18px;
+        background: #fdfdfd;
+        box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .document-card h2 {
+        margin: 0;
+        font-size: 1.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .document-card p {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--ink);
+      }
+      .document-chip {
+        width: fit-content;
+        border-radius: 999px;
+        padding: 4px 12px;
+        background: #0f172a;
+        color: white;
+        font-size: 0.7rem;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .document-meta {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .meta-label {
+        font-size: 0.6rem;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        color: var(--muted);
+        display: block;
+      }
+      .document-meta div {
+        padding: 6px 0;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 500;
+      }
+      .document-meta div strong {
+        display: block;
+        font-size: 0.9rem;
+        color: var(--ink);
+        margin-top: 2px;
+      }
+      .document-meta.small {
+        grid-template-columns: 1fr;
+        border: none;
+        color: #475569;
+        font-size: 0.72rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+      }
+      .document-meta.small span {
+        display: block;
+        margin-top: 4px;
+      }
+      .fiscal-bar {
+        padding: 10px 12px;
+        background: #f8fafc;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .client-panel {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+      }
+      .client-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .client-card strong {
+        display: block;
+        font-size: 1rem;
+        margin-bottom: 6px;
+      }
+      .middle-zone {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.83rem;
+      }
+      thead th {
+        padding: 12px 10px;
+        text-align: left;
+        font-size: 0.7rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        background: #f8fafc;
+        color: var(--muted);
+        border-bottom: 2px solid var(--line);
+      }
+      tbody td {
+        padding: 10px;
+        border-bottom: 1px solid #f1f5f9;
+        color: var(--ink);
+      }
+      tbody td.family {
+        font-size: 0.75rem;
+        font-style: italic;
+        color: var(--muted);
+      }
+      tbody td.text-right {
+        text-align: right;
+        font-weight: 600;
+      }
+      .summary-section {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(200px, 0.8fr);
+        gap: 16px;
+        align-items: end;
+      }
+      .summary-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 18px;
+        background: #fafbff;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+      .summary-row strong {
+        color: var(--ink);
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .summary-row.emphasize {
+        font-weight: 700;
+        font-size: 1.05rem;
+        letter-spacing: 0.02em;
+      }
+      .summary-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      .summary-meta p {
+        margin: 0;
+      }
+      .vat-note {
+        color: var(--accent);
+      }
+      .amount-words {
+        font-style: italic;
+        color: var(--muted);
+        letter-spacing: normal;
+        text-transform: none;
+        font-size: 0.85rem;
+      }
+      .invoice-footer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(200px, 1fr);
+        gap: 16px;
+      }
+      .notes-card {
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+        padding: 16px;
+        font-size: 0.85rem;
+        color: var(--muted);
+        min-height: 100px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .signature-group {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .signature-box {
+        border-top: 1px dashed var(--line);
+        padding-top: 12px;
+        font-size: 0.8rem;
+        text-align: center;
+        font-weight: 600;
+      }
+      @media print {
+        body {
+          padding: 0;
+        }
+        .page {
+          padding: 0;
+          margin: 0;
+        }
+        .document-card,
+        .middle-zone,
+        .summary-card,
+        .notes-card {
+          border-width: 1px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="top-zone">
+        <div class="company-block">
+          <span class="label">Fournisseur</span>
+          <div class="company-name">{{COMPANY_NAME}}</div>
+          <div class="company-contact">{{COMPANY_ADDRESS}}</div>
+          <div class="company-contact">{{COMPANY_CONTACT}}</div>
+          <div class="company-contact">{{COMPANY_EMAIL}}</div>
+        </div>
+        <div class="document-card">
+          <div class="document-chip">Facture</div>
+          <h2>{{INVOICE_NUMBER}}</h2>
+          <div class="document-meta">
+            <div>
+              <span class="meta-label">Émission</span>
+              <strong>{{INVOICE_DATE}}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Échéance</span>
+              <strong>{{INVOICE_DUE_DATE}}</strong>
+            </div>
+            <div>
+              <span class="meta-label">Status</span>
+              <strong>{{DOCUMENT_STATUS}}</strong>
+            </div>
+          </div>
+          <div class="document-meta small">
+            <span>Référence : <strong>{{ORDER_REF}}</strong></span>
+            <span>Mode paiement : <strong>{{PAYMENT_METHOD}}</strong></span>
+          </div>
+        </div>
+      </header>
+      <div class="fiscal-bar">
+        {{FISCAL_INFO}}
+      </div>
+      <section class="client-panel">
+        <div class="client-card">
+          <span class="label">Médecin</span>
+          <strong>{{CLIENT_NAME}}</strong>
+          <p>{{CLIENT_ADDRESS}}</p>
+          <p>{{CLIENT_PHONE}}</p>
+          <p>{{CLIENT_EMAIL}}</p>
+        </div>
+        <div class="client-card">
+          <span class="label">Commande associée</span>
+          <p>Référence : {{ORDER_REF}}</p>
+          <p>Date livraison : {{DELIVERY_DATE}}</p>
+        </div>
+      </section>
+      <section class="middle-zone">
+        <table>
+          <thead>
+            <tr>
+              <th>Désignation</th>
+              <th>Famille</th>
+              <th class="text-right">Quantité</th>
+              <th class="text-right">PU HT (DA)</th>
+              <th class="text-right">TVA (%)</th>
+              <th class="text-right">Total HT (DA)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ITEM_ROWS}}
+          </tbody>
+        </table>
+      </section>
+      <section class="summary-section">
+        <div class="summary-card">
+          <div class="summary-row">
+            <span>Total HT</span>
+            <strong>{{TOTAL_HT}} DA</strong>
+          </div>
+          <div class="summary-row">
+            <span>TVA ({{VAT_RATE}}%)</span>
+            <strong>{{VAT_AMOUNT}} DA</strong>
+          </div>
+          <div class="summary-row emphasize">
+            <span>Total TTC</span>
+            <strong>{{TOTAL_TTC}} DA</strong>
+          </div>
+        </div>
+        <div class="summary-meta">
+          <p class="vat-note">{{VAT_STATUS_TEXT}}</p>
+          <p class="amount-words">Montant en lettres : {{AMOUNT_IN_WORDS}}</p>
+        </div>
+      </section>
+      <footer class="invoice-footer">
+        <div class="notes-card">
+          <span class="label">Notes</span>
+          <p>{{NOTES}}</p>
+        </div>
+        <div class="signature-group">
+          <div class="signature-box">{{SIGNATURE_CLIENT}}</div>
+          <div class="signature-box">{{SIGNATURE_COMPANY}}</div>
+        </div>
+      </footer>
+    </div>
+    <script>
+      window.onload = () => {
+        window.print()
+        setTimeout(() => window.close(), 500)
+      }
+    </script>
+  </body>
+</html>
