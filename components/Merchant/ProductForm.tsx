@@ -11,9 +11,10 @@ interface ProductFormProps {
   onClose: () => void
   onSubmit: (productData: Partial<Product>) => Promise<void>
   product?: Product | null
+  families?: string[]
 }
 
-export default function ProductForm({ isOpen, onClose, onSubmit, product }: ProductFormProps) {
+export default function ProductForm({ isOpen, onClose, onSubmit, product, families = [] }: ProductFormProps) {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -24,7 +25,10 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
     supplier: '',
     expiration_date: '',
     volume_ml: '',
-    active: true
+    active: true,
+    family: '',
+    has_tva: false,
+    tva_rate: ''
   })
   const [previewUrl, setPreviewUrl] = useState<string>('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -33,6 +37,7 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
   const [success, setSuccess] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const vatPresets = ['7', '9', '19']
 
   // Fonction de compression d'image
   const processAndCompressImage = (file: File): Promise<string> => {
@@ -92,7 +97,10 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
         lot_number: product.lot_number || '',
         expiration_date: product.expiration_date || '',
         volume_ml: product.volume_ml?.toString() || '',
-        active: product.active !== false
+        active: product.active !== false,
+        family: product.family || '',
+        has_tva: product.has_tva ?? false,
+        tva_rate: product.tva_rate?.toString() || ''
       })
       setPreviewUrl(product.image_data || '')
     } else {
@@ -111,7 +119,10 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
       lot_number: '',
       expiration_date: '',
       volume_ml: '',
-      active: true 
+      active: true,
+      family: '',
+      has_tva: false,
+      tva_rate: ''
     })
     setPreviewUrl('')
     setImageFile(null)
@@ -142,14 +153,17 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
       const productData: any = {
         name: formData.name.trim(),
         price: parseFloat(formData.price),
-        description: formData.description.trim() || null,
-        supplier: formData.supplier.trim() || null,
-        provenance: formData.provenance.trim() || null, 
-        reference_code: formData.reference_code.trim() || null,
-        lot_number: formData.lot_number.trim() || null,
-        expiration_date: formData.expiration_date || null,
-        volume_ml: formData.volume_ml ? parseFloat(formData.volume_ml) : null,
-        active: formData.active
+      description: formData.description.trim() || null,
+      supplier: formData.supplier.trim() || null,
+      provenance: formData.provenance.trim() || null, 
+      reference_code: formData.reference_code.trim() || null,
+      lot_number: formData.lot_number.trim() || null,
+      expiration_date: formData.expiration_date || null,
+      volume_ml: formData.volume_ml ? parseFloat(formData.volume_ml) : null,
+      family: formData.family.trim() || null,
+      has_tva: Boolean(formData.has_tva),
+      tva_rate: formData.has_tva ? parseFloat(formData.tva_rate) || 0 : 0,
+      active: formData.active
       }
 
       if (imageFile) {
@@ -339,6 +353,98 @@ export default function ProductForm({ isOpen, onClose, onSubmit, product }: Prod
                 className="w-full px-3 py-2 bg-white border border-gray-200 rounded-md text-gray-900 text-sm focus:ring-1 focus:ring-purple-200 focus:border-purple-300 outline-none h-20 resize-none"
                 placeholder="Description du produit..."
               />
+            </div>
+          </div>
+
+          {/* Section Famille & TVA */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <h3 className="text-xs font-medium text-purple-600 uppercase tracking-wider mb-3">
+              Famille & TVA
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-600">Famille</label>
+                <input
+                  type="text"
+                  list="product-family-options"
+                  value={formData.family}
+                  onChange={(e) => setFormData({ ...formData, family: e.target.value })}
+                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-md text-gray-900 text-sm focus:ring-1 focus:ring-purple-200 focus:border-purple-300 outline-none transition-shadow"
+                  placeholder="Ex: Médicaments, Dispositifs, Service"
+                />
+                <datalist id="product-family-options">
+                  {families
+                    .filter((value): value is string => Boolean(value?.trim()))
+                    .map((value) => (
+                      <option key={value} value={value} />
+                    ))}
+                </datalist>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-gray-600">TVA</label>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={formData.has_tva}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          has_tva: e.target.checked,
+                          tva_rate: e.target.checked ? formData.tva_rate : ''
+                        })
+                      }
+                      className="w-4 h-4 text-purple-500 border-gray-300 rounded focus:ring-purple-200"
+                    />
+                    Assujetti
+                  </label>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  Cochez si le produit est soumis à la TVA.
+                </p>
+                {formData.has_tva ? (
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-600">Taux (%)</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={formData.tva_rate}
+                      onChange={(e) =>
+                        setFormData({ ...formData, tva_rate: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-md text-gray-900 text-sm focus:ring-1 focus:ring-purple-200 focus:border-purple-300 outline-none transition-shadow"
+                      placeholder="Ex: 19"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {vatPresets.map((rate) => (
+                        <button
+                          type="button"
+                          key={rate}
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              tva_rate: rate
+                            })
+                          }
+                          className={`px-3 py-1 border rounded-full text-[11px] font-semibold ${
+                            formData.tva_rate === rate
+                              ? 'bg-purple-600 text-white border-transparent'
+                              : 'border-gray-200 text-gray-600 bg-white'
+                          }`}
+                        >
+                          {rate}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500">Exonéré de TVA</div>
+                )}
+              </div>
             </div>
           </div>
 
