@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import Button from '@/components/ui/Button'
 import { 
@@ -33,6 +33,9 @@ import {
   ArrowLeft
 } from 'lucide-react'
 
+import { loadTemplate, renderTemplate } from '@/components/Merchant/templateLoader'
+import { numberToWordsDA } from '@/components/Merchant/numberToWords'
+
 interface OrdersPageProps {
   merchantId: string;
   products: any[];
@@ -52,6 +55,7 @@ interface OrderGroup {
   total_items: number;
   total_quantity: number;
   total_amount: number;
+  total_tax?: number;
   status: 'pending' | 'processing' | 'delivered' | 'cancelled';
 }
 
@@ -97,6 +101,38 @@ useEffect(() => {
     fetchCompanyInfo();
   }
 }, [merchantId]); // On ne surveille QUE l'ID, pas l'objet companyInfo lui-même
+
+  const productLookup = useMemo(() => {
+    const map = new Map<string, any>()
+    products.forEach(product => {
+      if (product?.id === undefined || product?.id === null) return
+      map.set(String(product.id), product)
+    })
+    return map
+  }, [products])
+
+  const resolveOrderLine = (order: any, lookup: Map<string, any> = productLookup) => {
+    const product = lookup.get(String(order.product_id)) || null
+    const quantity = Math.max(0, Number(order.quantity ?? 1))
+    const unitPrice = Number(product?.price ?? order.price ?? order.unit_price ?? 0)
+    const vatCandidate = Number(product?.tva_rate ?? order.tva_rate ?? order.tax_rate ?? 0)
+    const hasTva = Boolean(
+      order.has_tva ?? product?.has_tva ?? vatCandidate > 0
+    )
+    const tvaRate = hasTva ? Math.max(0, vatCandidate) : 0
+    const lineTotal = quantity * unitPrice
+    const taxAmount = hasTva && tvaRate > 0 ? (lineTotal * tvaRate) / 100 : 0
+    return {
+      product,
+      quantity,
+      unitPrice,
+      hasTva,
+      tvaRate,
+      lineTotal,
+      taxAmount,
+    }
+  }
+
   const fetchCompanyInfo = async () => {
     try {
       const { data } = await supabase
@@ -139,20 +175,21 @@ useEffect(() => {
                        `CMD-${new Date(order.created_at).getTime()}-${order.client_id}`
 
         if (!groupsMap.has(groupId)) {
-          groupsMap.set(groupId, {
-            order_group_id: groupId,
-            merchant_id: order.merchant_id,
-            client_id: order.client_id,
-            client: clientsData?.find(c => String(c.id) === String(order.client_id)) || null,
-            orders: [],
-            created_at: order.created_at,
-            updated_at: order.created_at,
-            total_items: 0,
-            total_quantity: 0,
-            total_amount: 0,
-            status: order.status
-          })
-        }
+        groupsMap.set(groupId, {
+          order_group_id: groupId,
+          merchant_id: order.merchant_id,
+          client_id: order.client_id,
+          client: clientsData?.find(c => String(c.id) === String(order.client_id)) || null,
+          orders: [],
+          created_at: order.created_at,
+          updated_at: order.created_at,
+          total_items: 0,
+          total_quantity: 0,
+          total_amount: 0,
+          total_tax: 0,
+          status: order.status
+        })
+      }
         
         const group = groupsMap.get(groupId)!
         group.orders.push(order)
@@ -168,10 +205,15 @@ useEffect(() => {
       })
 
       groupsMap.forEach(group => {
-        group.total_amount = group.orders.reduce((sum, order) => {
-          const product = products.find(p => String(p.id) === String(order.product_id))
-          return sum + (product?.price || 0) * (order.quantity || 1)
-        }, 0)
+        let totalInclTax = 0
+        let totalTax = 0
+        group.orders.forEach(order => {
+          const { lineTotal, taxAmount } = resolveOrderLine(order)
+          totalInclTax += lineTotal + taxAmount
+          totalTax += taxAmount
+        })
+        group.total_amount = totalInclTax
+        group.total_tax = totalTax
       })
 
       setOrderGroups(Array.from(groupsMap.values())
@@ -186,17 +228,16 @@ useEffect(() => {
   }
 
   const showSystemNotification = (title: string, message: string) => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          body: message,
-          icon: '/favicon.ico', 
-        })
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
-        audio.play().catch(() => {}) 
-      } catch (e) {
-        console.warn('Erreur native notification:', e)
-      }
+    if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
+      return
+    }
+
+    try {
+      new Notification(title, {
+        body: message,
+      })
+    } catch (e) {
+      console.warn('Erreur native notification:', e)
     }
   }
 
@@ -248,17 +289,43 @@ useEffect(() => {
 
   const buildInvoiceFromGroup = (group: OrderGroup, invoiceNumber: string) => {
     const items = (group.orders || []).map((order: any) => {
-      const product = products.find(p => String(p.id) === String(order.product_id))
+      const { product, quantity, unitPrice, hasTva, tvaRate, lineTotal, taxAmount } = resolveOrderLine(order)
+      const reference =
+        order.reference ||
+        order.product_reference ||
+        product?.reference_code ||
+        product?.ref ||
+        `PRD-${String(order.product_id || order.id || 0).slice(-4)}`
+      const name = product?.name || order.product_name || `Produit ${String(order.product_id || order.id || '').slice(-6)}`
+      const familyValue =
+        typeof product?.family === 'string' && product.family.trim()
+          ? product.family.trim()
+          : order.family || ''
+      const lotValue =
+        order.lot ||
+        order.lot_number ||
+        order.batch ||
+        order.batch_number ||
+        product?.lot_number ||
+        ''
       return {
-        name: product?.name || `Produit ${String(order.product_id).slice(-6)}`,
-        price: Number(product?.price || 0),
-        quantity: Number(order.quantity || 1),
+        name,
+        reference,
+        family: familyValue,
+        lot: lotValue,
+        price: unitPrice,
+        quantity,
+        has_tva: hasTva,
+        tva_rate: hasTva ? tvaRate : 0,
+        line_total: lineTotal,
+        tax_amount: taxAmount,
       }
     })
 
-    const totalHT = items.reduce((sum: number, item: any) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0)
-    const tvaRate = 0
-    const totalTTC = totalHT
+    const totalHT = items.reduce((sum: number, item: any) => sum + (item.line_total || 0), 0)
+    const totalTax = items.reduce((sum: number, item: any) => sum + (item.tax_amount || 0), 0)
+    const totalTTC = totalHT + totalTax
+    const computedTvaRate = totalHT ? Number(((totalTax / totalHT) * 100).toFixed(2)) : 0
 
     const date = new Date()
     const today = date.toISOString().split('T')[0]
@@ -282,7 +349,7 @@ useEffect(() => {
       due_date: due,
       items,
       total_ht: totalHT,
-      tva_rate: tvaRate,
+      tva_rate: computedTvaRate,
       total_ttc: totalTTC,
       status: 'pending',
       payment_method: null,
@@ -300,7 +367,7 @@ useEffect(() => {
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
 
-    const companyName = companyInfo?.company_name || companyInfo?.name || 'Entreprise.....'
+    const companyName = companyInfo?.company_name || companyInfo?.name || 'Entreprise'
     const companyEmail = companyInfo?.company_email || companyInfo?.email || ''
     const companyPhone = companyInfo?.company_phone || companyInfo?.phone || ''
     const companyAddress = companyInfo?.company_address || companyInfo?.address || ''
@@ -316,6 +383,8 @@ useEffect(() => {
     const tvaRate = Number(invoice?.tva_rate ?? 0)
     const tvaAmount = totalHT * (tvaRate / 100)
     const totalTTC = Number(invoice?.total_ttc ?? totalHT + tvaAmount)
+    const invoiceTvaStatus =
+      tvaRate <= 0 ? 'Non assujetti à la TVA' : 'TVA collectée sur cette facture'
 
     const fiscalLine = [
       companyInfo?.rc ? `RC: ${companyInfo.rc}` : '',
@@ -436,7 +505,7 @@ useEffect(() => {
                   <div class="row"><span>Total HT</span><strong>${totalHT.toFixed(2)} DA</strong></div>
                   <div class="row"><span>TVA (${tvaRate.toFixed(0)}%)</span><strong>${tvaAmount.toFixed(2)} DA</strong></div>
                   <div class="row grand"><span>Total TTC</span><strong style="color:var(--brand);">${totalTTC.toFixed(2)} DA</strong></div>
-                  ${tvaRate === 0 ? `<div style="margin-top:10px; font-size:12px; color:var(--muted); font-weight:800;">Non assujetti à la TVA</div>` : ''}
+                <div style="margin-top:10px; font-size:12px; color:var(--muted); font-weight:800;">${invoiceTvaStatus}</div>
                 </div>
               </div>
 
@@ -460,6 +529,13 @@ useEffect(() => {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;')
+
+  const safeValue = (value: any) => {
+    if (value === undefined || value === null || value === '') {
+      return '—'
+    }
+    return escapeHtml(String(value))
+  }
 
   const getApiBaseUrl = () => {
     if (typeof window === 'undefined') return ''
@@ -492,7 +568,7 @@ useEffect(() => {
     const companyAddress = companyInfo?.company_address || companyInfo?.address || ''
     const companyCity = companyInfo?.company_city || companyInfo?.city || ''
 
-    const clientName = group.client?.name || 'Client'
+    const clientName = group.client?.name || 'Médecin'
     const clientEmail = group.client?.email || ''
     const clientPhone = group.client?.phone || ''
     const clientAddress = group.client?.address || ''
@@ -503,6 +579,7 @@ useEffect(() => {
     const tvaRate = Number(invoice?.tva_rate ?? 0)
     const tvaAmount = totalHT * (tvaRate / 100)
     const totalTTC = Number(invoice?.total_ttc ?? totalHT + tvaAmount)
+    const invoiceTvaStatus = tvaRate <= 0 ? 'Non assujetti à la TVA' : 'TVA collectée sur cette facture'
 
     const rows = items
       .map((item: any) => {
@@ -591,7 +668,7 @@ useEffect(() => {
                 <div style="display:flex;justify-content:space-between;color:#475569;font-weight:800;font-size:12px;"><span>Total HT</span><span>${totalHT.toFixed(2)} DA</span></div>
                 <div style="margin-top:6px;display:flex;justify-content:space-between;color:#475569;font-weight:800;font-size:12px;"><span>TVA (${tvaRate.toFixed(0)}%)</span><span>${tvaAmount.toFixed(2)} DA</span></div>
                 <div style="margin-top:8px;padding-top:10px;border-top:1px dashed #e2e8f0;display:flex;justify-content:space-between;font-weight:900;"><span>Total TTC</span><span style="color:#4f46e5;">${totalTTC.toFixed(2)} DA</span></div>
-                ${tvaRate === 0 ? `<div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:800;">Non assujetti à la TVA</div>` : ''}
+                <div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:800;">${invoiceTvaStatus}</div>
               </div>
             </div>
 
@@ -647,34 +724,37 @@ useEffect(() => {
     const companyAddress = companyInfo?.company_address || companyInfo?.address || ''
     const companyCity = companyInfo?.company_city || companyInfo?.city || ''
 
-    const clientName = clientInfo?.name || group.client?.name || 'Client'
+    const clientName = clientInfo?.name || group.client?.name || 'Médecin'
     const clientEmail = clientInfo?.email || group.client?.email || ''
     const clientPhone = clientInfo?.phone || group.client?.phone || ''
     const clientAddress = clientInfo?.address || group.client?.address || ''
     const clientCity = clientInfo?.city || group.client?.city || ''
 
-    const rows = (group.orders || [])
-      .map((order: any) => {
-        const product = products.find(p => String(p.id) === String(order.product_id))
-        const name = escapeHtml(product?.name || `Produit ${String(order.product_id).slice(-6)}`)
-        const qty = Number(order.quantity || 0)
-        const price = Number(product?.price || 0)
-        const line = qty * price
-        return `
+    const rowEntries = (group.orders || []).map((order: any) => {
+      const { product, quantity, lineTotal, taxAmount } = resolveOrderLine(order)
+      const name = escapeHtml(product?.name || `Produit ${String(order.product_id || order.id || '').slice(-6)}`)
+      const qty = quantity
+      const priceValue = Number(product?.price ?? 0)
+      const priceLabel = formatCurrencyBL(priceValue).trim()
+      const lineLabel = formatCurrencyBL(lineTotal).trim()
+      return {
+        html: `
           <tr>
             <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0;">${name}</td>
             <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right;">${qty}</td>
-            <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right;">${price.toFixed(2)} DA</td>
-            <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:700;">${line.toFixed(2)} DA</td>
+            <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right;">${priceLabel}</td>
+            <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:right; font-weight:700;">${lineLabel}</td>
           </tr>
-        `
-      })
-      .join('')
-
-    const totalHT = (group.orders || []).reduce((sum: number, order: any) => {
-      const product = products.find(p => String(p.id) === String(order.product_id))
-      return sum + (Number(product?.price || 0) * Number(order.quantity || 0))
-    }, 0)
+        `,
+        lineTotal,
+        taxAmount,
+      }
+    })
+    const rows = rowEntries.map(entry => entry.html).join('')
+    const totalHT = rowEntries.reduce((sum, row) => sum + (row.lineTotal || 0), 0)
+    const totalTax = rowEntries.reduce((sum, row) => sum + (row.taxAmount || 0), 0)
+    const totalTTC = totalHT + totalTax
+    const tvaStatus = totalTax <= 0 ? 'Non assujetti à la TVA' : 'TVA collectée sur cette livraison'
 
     return `
       <div style="font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial; color:#0f172a;">
@@ -733,8 +813,10 @@ useEffect(() => {
 
             <div style="margin-top:14px;display:flex;justify-content:flex-end;">
               <div style="width:100%;max-width:320px;border:1px solid #e2e8f0;border-radius:12px;padding:12px;background:#ffffff;">
-                <div style="display:flex;justify-content:space-between;font-weight:900;"><span>Total</span><span style="color:#4f46e5;">${totalHT.toFixed(2)} DA</span></div>
-                <div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:800;">Non assujetti à la TVA</div>
+                <div style="display:flex;justify-content:space-between;font-weight:900;"><span>Total HT</span><span style="color:#4f46e5;">${formatCurrencyBL(totalHT).trim()}</span></div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-top:6px;"><span>TVA</span><span>${formatCurrencyBL(totalTax).trim()}</span></div>
+                <div style="display:flex;justify-content:space-between;font-weight:900;margin-top:6px;"><span>Total TTC</span><span style="color:#0f172a;">${formatCurrencyBL(totalTTC).trim()}</span></div>
+                <div style="margin-top:10px;font-size:12px;color:#64748b;font-weight:800;">${tvaStatus}</div>
               </div>
             </div>
 
@@ -964,7 +1046,7 @@ useEffect(() => {
                 merchantEmail: companyInfo?.company_email || companyInfo?.email || '',
                 merchantName: companyInfo?.company_name || companyInfo?.name || 'Fournisseur',
                 clientEmail,
-                clientName: group.client?.name || 'Client',
+                clientName: group.client?.name || 'Médecin',
                 orderGroupId: groupId,
                 status: newStatus,
                 currency: companyInfo?.currency || '',
@@ -986,621 +1068,200 @@ useEffect(() => {
 
   const handlePrintDeliveryNote = async (group: OrderGroup) => {
     try {
-      // Récupérer les informations du marchand
-      const { data: merchant } = await supabase
+      const { data: merchant, error: merchantError } = await supabase
         .from('merchants')
         .select('*')
         .eq('id', merchantId)
-        .single();
+        .maybeSingle()
 
-      // Récupérer les informations du client avec son client_id
-      const { data: client } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('id', group.client_id)
-        .single();
+      if (merchantError) console.warn('Impossible de récupérer le marchand pour le BL:', merchantError)
 
-      const clientInfo = client || group.client || {};
-      const merchantInfo = merchant || {};
+      const clientRequest = group.client_id
+        ? supabase.from('clients').select('*').eq('id', group.client_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null })
 
-      const merchantNumeroAi =
-        (merchantInfo as any)?.['numéro_ai'] || (merchantInfo as any)?.numero_ai || (merchantInfo as any)?.ai || ''
-      const clientTelephone =
-        (clientInfo as any)?.['téléphone'] || (clientInfo as any)?.telephone || (clientInfo as any)?.phone || ''
-      const clientNumeroFiscal =
-        (clientInfo as any)?.['numéro_fiscal'] ||
-        (clientInfo as any)?.numero_fiscal ||
-        (clientInfo as any)?.fiscal_number ||
-        ''
+      const { data: client, error: clientError } = await clientRequest
+      if (clientError) console.warn('Impossible de récupérer le client pour le BL:', clientError)
 
-      const printWindow = window.open('', '_blank', 'width=800,height=600');
-      if (!printWindow) { 
-        alert('Veuillez autoriser les popups'); 
-        return; 
+      const clientInfo = client || group.client || {}
+      const merchantInfo = merchant || {}
+      const template = await loadTemplate('delivery')
+      const formatter = new Intl.NumberFormat('fr-DZ', {
+        style: 'currency',
+        currency: 'DZD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })
+      const orderLines = Array.isArray(group.orders) ? group.orders : []
+        let totalHT = 0
+        let totalTax = 0
+        let totalQty = 0
+        const vatRates = new Set<number>()
+
+      const rows = orderLines
+        .map(order => {
+          const { product, quantity, lineTotal, taxAmount } = resolveOrderLine(order)
+          totalQty += quantity
+          totalHT += lineTotal
+          totalTax += taxAmount
+          const safeName = escapeHtml(product?.name || order.name || 'Produit')
+          const safeReferenceCode = safeValue(product?.reference_code || product?.ref || order.reference_code)
+          const safeFamily = safeValue(product?.family || order.family)
+          const safeLot = safeValue(product?.lot_number || order.lot_number || product?.lot_number)
+          const safeVolume = safeValue(product?.volume_ml || order.volume_ml)
+          const safeDescription = safeValue(product?.description || order.description)
+          const safeProvenance = safeValue(product?.provenance || order.provenance)
+          const safeSupplier = safeValue(product?.supplier || order.supplier)
+          const safeExpiration = safeValue(product?.expiration_date || order.expiration_date)
+          const safeStockQty = safeValue(product?.stock_quantity)
+          const safeMinStock = safeValue(product?.min_stock_level)
+          const safeCreatedAt = safeValue(product?.created_at || order.created_at)
+          const safeUpdatedAt = safeValue(product?.updated_at || order.updated_at)
+          const safeActive = product?.active === false ? 'Non' : 'Oui'
+          const hasProductTva = Boolean(product?.has_tva ?? order.has_tva)
+          const tvaRate = hasProductTva
+            ? Number(product?.tva_rate ?? order.tva_rate ?? order.tax_rate ?? 0)
+            : 0
+
+          const detailFields = [
+            { label: 'ID', value: safeValue(product?.id) },
+            { label: 'Marchand', value: safeValue(product?.merchant_id) },
+            { label: 'Description', value: safeDescription },
+            { label: 'Famille', value: safeFamily },
+            { label: 'Lot', value: safeLot },
+            { label: 'Référence', value: safeReferenceCode },
+            { label: 'TVA', value: hasProductTva ? `Oui (${tvaRate.toFixed(2)}%)` : 'Non' },
+            { label: 'Expiration', value: safeExpiration },
+            { label: 'Volume', value: safeVolume },
+            { label: 'Stock', value: safeStockQty },
+            { label: 'Stock mini', value: safeMinStock },
+            { label: 'Créé le', value: safeCreatedAt },
+            { label: 'Mis à jour', value: safeUpdatedAt },
+            { label: 'Actif', value: safeActive },
+            { label: 'Provenance', value: safeProvenance },
+            { label: 'Fournisseur', value: safeSupplier },
+          ]
+
+          const filteredDetails = detailFields.filter(field => field.value !== '—')
+          const detailsHtml =
+            filteredDetails
+              .map(field => `<span class="meta-tag"><strong>${field.label}:</strong> ${field.value}</span>`)
+              .join('') || '<span class="meta-tag">Détails non renseignés</span>'
+
+          return `
+            <tr>
+              <td><strong>${safeName}</strong></td>
+              <td>${safeReferenceCode}</td>
+              <td>${safeFamily}</td>
+              <td>${safeLot}</td>
+              <td>${safeVolume}</td>
+              <td class="qty-cell">${quantity}</td>
+            </tr>
+            <tr class="product-details-row">
+              <td colspan="6">
+                <div class="product-meta">
+                  ${detailsHtml}
+                </div>
+              </td>
+            </tr>
+          `
+        })
+        .join('')
+
+      const rowsHtml = rows || '<tr><td colspan="6" class="text-right">Aucune ligne</td></tr>'
+      const totalTTC = totalHT + totalTax
+      const vatRateLabel = vatRates.size === 1 ? `${Array.from(vatRates)[0].toFixed(2)}` : 'Mixte'
+      const vatStatusText = totalTax > 0 ? 'TVA collectée sur cette livraison' : 'Non assujetti à la TVA'
+      const amountInWords = numberToWordsDA(totalTTC)
+      const deliveryDate = group.created_at ? new Date(group.created_at) : new Date()
+      const formattedDate = deliveryDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      const normalizedRef = normalizeOrderRef(group.order_group_id)
+      const dateSuffix = formattedDate.replace(/\//g, '')
+      const deliveryNumber = `BL-${normalizedRef}-${dateSuffix}`
+      const fiscalPieces = [
+        merchantInfo?.nif ? `NIF: ${escapeHtml(String(merchantInfo.nif))}` : null,
+        merchantInfo?.rc ? `RC: ${escapeHtml(String(merchantInfo.rc))}` : null,
+        merchantInfo?.ai ? `AI: ${escapeHtml(String(merchantInfo.ai))}` : null,
+        merchantInfo?.nis ? `NIS: ${escapeHtml(String(merchantInfo.nis))}` : null
+      ]
+        .filter(Boolean)
+        .join(' • ') || 'Fiscalité non renseignée'
+
+      const companyAddress = [
+        merchantInfo?.adresse_de_l_entreprise,
+        merchantInfo?.company_address,
+        merchantInfo?.address
+      ]
+        .filter(Boolean)
+        .map(value => escapeHtml(String(value)))
+        .join(', ')
+
+      const companyContact = [
+        merchantInfo?.company_phone || merchantInfo?.telephone || merchantInfo?.phone,
+        merchantInfo?.company_email || merchantInfo?.email
+      ]
+        .filter(Boolean)
+        .map(value => escapeHtml(String(value)))
+        .join(' • ')
+
+      const medicalAddress = [
+        clientInfo?.address || clientInfo?.adresse,
+        clientInfo?.city || clientInfo?.ville,
+        clientInfo?.wilaya
+      ]
+        .filter(Boolean)
+        .map(value => escapeHtml(String(value)))
+        .join(', ')
+
+      const replacements: Record<string, string> = {
+        COMPANY_NAME: escapeHtml(merchantInfo?.nom || merchantInfo?.company_name || 'DiagnoSphère'),
+        COMPANY_ADDRESS: escapeHtml(companyAddress || '—'),
+        COMPANY_CONTACT: companyContact,
+        COMPANY_EMAIL: escapeHtml(merchantInfo?.company_email || merchantInfo?.email || ''),
+        FISCAL_INFO: fiscalPieces,
+        DELIVERY_NUMBER: escapeHtml(deliveryNumber),
+        ORDER_REF: escapeHtml(normalizedRef),
+        REFERENCE_NUMBER: escapeHtml(group.order_group_id || ''),
+        DELIVERY_DATE: escapeHtml(formattedDate),
+        MEDICAL_PROFESSIONAL: escapeHtml(clientInfo?.nom || clientInfo?.name || 'Médecin'),
+        MEDICAL_ADDRESS: medicalAddress,
+        MEDICAL_PHONE: escapeHtml(clientInfo?.telephone || clientInfo?.phone || ''),
+        MEDICAL_EMAIL: escapeHtml(clientInfo?.email || ''),
+        DELIVERY_MODE: escapeHtml(group.delivery_mode || 'Standard'),
+        DELIVERY_TRANSPORTER: escapeHtml(group.transporter || group.transporteur || 'Logistique interne'),
+        OBSERVATIONS: escapeHtml(group.notes || 'Aucune observation'),
+        SENDER_LABEL: escapeHtml('DiagnoSphère'),
+        SENDER_NAME: escapeHtml(merchantInfo?.nom || merchantInfo?.company_name || 'DiagnoSphere'),
+        SENDER_SIGNATURES: escapeHtml('Visa Logistique (Sortie) • Visa Client (Réception)'),
+        DOCUMENT_NOTE: escapeHtml('Ce document atteste le transfert de marchandise, sans valeur monétaire affichée'),
+        DELIVERY_ROWS: rowsHtml,
+        TOTAL_HT: formatter.format(totalHT),
+        TOTAL_QUANTITY: String(totalQty),
+        VAT_RATE: vatRateLabel,
+        VAT_AMOUNT: formatter.format(totalTax),
+        TOTAL_TTC: formatter.format(totalTTC),
+        VAT_STATUS_TEXT: vatStatusText,
+        AMOUNT_IN_WORDS: escapeHtml(amountInWords),
+        TOTAL_DELIVERED: formatter.format(totalTTC),
+        SIGNATURE_DELIVERER: 'Signature livreur',
+        SIGNATURE_RECEIVER: 'Signature destinataire'
       }
 
-      const today = new Date();
-      const dateFormatted = today.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const shortId = normalizeOrderRef(group.order_group_id);
-      const deliveryNoteNumber = `BL-${shortId}-${dateFormatted.replace(/\//g, '')}`;
-
-      const companyName = companyInfo?.Nom_de_l_entreprise || companyInfo?.company_name || 'DiagnoSphère';
-      const companyPhone =
-        (companyInfo as any)?.['téléphone_de_l_entreprise'] ||
-        (companyInfo as any)?.telephone_de_l_entreprise ||
-        companyInfo?.company_phone ||
-        '0560277868';
-      const companyAddress = companyInfo?.adresse_de_l_entreprise || companyInfo?.company_address || 'Alger, Algérie';
-      const currency = companyInfo?.devise || companyInfo?.currency || '';
-
-      const formatCurrencyBL = (amount: number) => {
-        return new Intl.NumberFormat('fr-DZ', {
-          style: 'currency',
-          currency: 'DZD',
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        }).format(amount).replace('', '').trim() + ' ';
-      };
-
-      const htmlContent = 
-	  `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>BL ${shortId}</title>
-  <style>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  }
-
-  @page {
-    size: A4;
-    margin: 1.5cm;
-  }
-
-  body {
-    background: #ffffff;
-    color: #1e293b;
-    font-size: 9.5pt;
-    line-height: 1.6;
-    -webkit-print-color-adjust: exact;
-  }
-
-  /* Header Design */
-  .header-section {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 40px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #f1f5f9;
-  }
-
-  .company-name {
-    font-size: 22pt;
-    font-weight: 800;
-    color: #0f172a;
-    letter-spacing: -0.04em;
-    margin-bottom: 8px;
-  }
-
-  .company-details {
-    color: #64748b;
-    font-size: 8.5pt;
-    line-height: 1.5;
-  }
-
-  .document-info {
-    text-align: right;
-  }
-
-  .document-title {
-    font-size: 14pt;
-    font-weight: 700;
-    color: #2563eb;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    margin-bottom: 5px;
-  }
-
-  .document-ref-main {
-    font-size: 11pt;
-    font-weight: 600;
-    color: #0f172a;
-  }
-
-  /* Fiscal Grid - Elegant Row */
-  .fiscal-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-    margin-bottom: 40px;
-    padding: 15px 25px;
-    background: #f8fafc;
-    border-radius: 12px;
-  }
-
-  .fiscal-label {
-    font-size: 7pt;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #94a3b8;
-    font-weight: 700;
-    display: block;
-    margin-bottom: 2px;
-  }
-
-  .fiscal-value {
-    font-size: 9pt;
-    font-weight: 600;
-    color: #334155;
-  }
-
-  /* Parties (Client & Delivery) */
-  /* Parties (Client & Delivery) */
-.parties-container {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 15px;
-}
-
-.party-title {
-  font-size: 8pt;
-  font-weight: 700;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
-  padding-bottom: 5px;
-}
-
-/* Conteneur pour les infos client et fiscales côte à côte */
-.client-info-container {
-  display: flex;
-  gap: 15px;
-}
-
-.client-info-left {
-  flex: 1;
-}
-
-.client-info-right {
-  flex: 0.8;
-  border-left: 1px dashed #e2e8f0;
-  padding-left: 12px;
-}
-
-.party-content strong {
-  color: #0f172a;
-  font-size: 10.5pt;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.party-content p {
-  color: #475569;
-  margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 8.5pt;
-}
-
-.party-content i {
-  color: #94a3b8;
-  width: 14px;
-  font-size: 8pt;
-}
-
-/* Style pour les informations fiscales */
-.fiscal-info-title {
-  font-size: 7pt;
-  font-weight: 600;
-  color: #2563eb;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
-}
-
-.fiscal-item-small {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  font-size: 8pt;
-}
-
-.fiscal-item-small .label {
-  color: #64748b;
-}
-
-.fiscal-item-small .value {
-  font-weight: 600;
-  color: #334155;
-}
-
-/* Livraison info compact */
-.delivery-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.delivery-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 0;
-  border-bottom: 1px dotted #f1f5f9;
-}
-
-.delivery-label {
-  color: #64748b;
-  font-size: 8pt;
-}
-
-.delivery-value {
-  font-weight: 500;
-  color: #1e293b;
-  font-size: 8.5pt;
-}
-
-.payment-badge {
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 7.5pt;
-  font-weight: 500;
-}
-
-  /* Table Design */
-  .products-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 30px;
-  }
-
-  .products-table th {
-    text-align: left;
-    padding: 12px 10px;
-    font-size: 7.5pt;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: #64748b;
-    border-bottom: 2px solid #0f172a;
-  }
-
-  .products-table td {
-    padding: 15px 10px;
-    border-bottom: 1px solid #f1f5f9;
-    vertical-align: top;
-  }
-
-  .product-name {
-    font-weight: 600;
-    color: #0f172a;
-    font-size: 10pt;
-    margin-bottom: 5px;
-  }
-
-  .product-detail-item {
-    display: inline-flex;
-    font-size: 7pt;
-    background: #f1f5f9;
-    padding: 2px 8px;
-    border-radius: 4px;
-    color: #475569;
-    margin-right: 5px;
-    font-weight: 500;
-  }
-
-  .price-cell {
-    font-weight: 500;
-    color: #334155;
-    text-align: right;
-  }
-
-  .total-cell {
-    font-weight: 700;
-    color: #0f172a;
-    text-align: right;
-  }
-
-  /* Totals Box */
-  .totals-wrapper {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 20px;
-  }
-
-  .totals-box {
-    width: 280px;
-  }
-
-  .total-line {
-    display: flex;
-    justify-content: space-between;
-    padding: 6px 0;
-    font-size: 9pt;
-    color: #64748b;
-  }
-
-  .grand-total {
-    border-top: 1px solid #e2e8f0;
-    margin-top: 10px;
-    padding-top: 15px;
-    font-weight: 800;
-    font-size: 13pt;
-    color: #2563eb;
-  }
-
-  /* Bottom Section */
-  .bottom-section {
-    margin-top: 50px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .no-tax-stamp {
-    border: 2px double #cbd5e1;
-    color: #94a3b8;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 9pt;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    transform: rotate(-2deg);
-  }
-
-  .signature-box {
-    text-align: center;
-    width: 200px;
-  }
-
-  .signature-line {
-    border-bottom: 1px solid #0f172a;
-    height: 40px;
-    margin-bottom: 10px;
-  }
-
-  .footer {
-    position: fixed;
-    bottom: 1.5cm;
-    left: 1.5cm;
-    right: 1.5cm;
-    text-align: center;
-    font-size: 7.5pt;
-    color: #94a3b8;
-    border-top: 1px solid #f1f5f9;
-    padding-top: 15px;
-  }
-</style>
-</head>
-<body>
- <div class="header-minimal">
-  <div class="header-left">
-    <div class="brand-name">${merchantInfo?.nom || 'DiagnoSphere'}</div>
-    <div class="brand-contact">
-      ${[merchantInfo?.company_address || merchantInfo?.address || '', merchantInfo?.company_city || merchantInfo?.city || ''].filter(Boolean).join(', ')}<br>
-      Tél: ${merchantInfo?.company_phone || merchantInfo?.phone || '—'} | ${merchantInfo?.company_email || merchantInfo?.email || '—'}
-    </div>
-  </div>
-  <div class="header-right">
-    <div class="doc-badge">BON DE LIVRAISON</div>
-    <div class="doc-meta">N° <strong>${deliveryNoteNumber}</strong></div>
-    <div class="doc-meta" style="color:#3b82f6;">Date: ${dateFormatted}</div>
-  </div>
-</div>
-
-<div class="fiscal-strip">
-  <span><strong>NIF:</strong> ${merchantInfo?.nif || '—'}</span>
-  <span><strong>RC:</strong> ${merchantInfo?.rc || '—'}</span>
-  <span><strong>AI:</strong> ${merchantNumeroAi || '—'}</span>
-  <span><strong>NIS:</strong> ${merchantInfo?.nis || '—'}</span>
-</div>
-
-<div class="info-grid">
-  <div class="info-card">
-    <div class="card-tag">DESTINATAIRE</div>
-    <div class="client-main">
-      <div class="client-name">${clientInfo?.nom || clientInfo?.name || 'DR ANWAR'}</div>
-      <div class="client-sub">
-        <span>ID: ${clientInfo?.client_id || '—'}</span> | 
-        <span><i class="fas fa-phone"></i> ${clientTelephone || '—'}</span>
-      </div>
-      <div class="client-sub">${clientInfo?.ville || '—'} ${clientInfo?.code_postal || ''}</div>
-    </div>
-    
-    <div class="client-fiscal-tags">
-      ${clientInfo?.rc ? `<span class="tag">RC: ${clientInfo.rc}</span>` : ''}
-      ${clientInfo?.fiscal_number ? `<span class="tag">NIF: ${clientInfo.fiscal_number}</span>` : ''}
-      ${clientInfo?.ai_number ? `<span class="tag">AI: ${clientInfo.ai_number}</span>` : ''}
-    </div>
-  </div>
-
-  <div class="info-card">
-    <div class="card-tag">LOGISTIQUE</div>
-    <div class="log-details">
-      <div class="log-row"><span>Commande:</span> <strong>${group?.order_group_id ? normalizeOrderRef(group.order_group_id) : '—'}</strong></div>
-      <div class="log-row"><span>Articles:</span> <strong>${group?.total_items || 0}</strong></div>
-      <div class="log-row"><span>Paiement:</span> <span class="pay-mode">${clientInfo?.payment_mode || 'Non spécifié'}</span></div>
-    </div>
-  </div>
-</div>
-
-<style>
-  /* CSS pour le rendu minimaliste */
-  .header-minimal { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; border-bottom: 2px solid #1e293b; padding-bottom: 8px; }
-  .brand-name { font-size: 16pt; font-weight: 800; color: #1e293b; line-height: 1; }
-  .brand-contact { font-size: 8pt; color: #64748b; margin-top: 4px; }
-  .doc-badge { background: #1e293b; color: white; padding: 4px 10px; font-size: 10pt; font-weight: 700; border-radius: 4px; text-align: right; }
-  .doc-meta { font-size: 9pt; text-align: right; margin-top: 2px; }
-
-  .fiscal-strip { display: flex; justify-content: space-between; background: #f8fafc; padding: 5px 10px; border-radius: 4px; font-size: 7.5pt; color: #475569; margin-bottom: 12px; border: 1px solid #e2e8f0; }
-
-  .info-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px; margin-bottom: 15px; }
-  .info-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; position: relative; }
-  .card-tag { font-size: 6.5pt; font-weight: 800; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 5px; }
-  
-  .client-name { font-size: 11pt; font-weight: 700; color: #1e293b; }
-  .client-sub { font-size: 8.5pt; color: #475569; margin-top: 2px; }
-  .client-fiscal-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
-  .tag { font-size: 7pt; background: #eff6ff; color: #1d4ed8; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
-
-  .log-details { font-size: 8.5pt; }
-  .log-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #f1f5f9; }
-  .pay-mode { color: #059669; font-weight: 700; text-transform: uppercase; font-size: 7.5pt; }
-</style>
-  <!-- Tableau des produits avec Détails -->
-  <div class="products-section">
-    <table class="products-table">
-  <thead>
-    <tr>
-      <th>Désignation Produit</th>
-      <th>Volume</th>
-      <th>Lot / Référence</th>
-      <th>Origine</th>
-      <th class="text-right">Qté</th>
-      <th class="text-right"></th>
-      <th class="text-right"></th>
-    </tr>
-  </thead>
-  <tbody>
-    ${group.orders.map((order: any) => {
-      const product = products.find((p: any) => String(p.id) === String(order.product_id));
-      const totalRow = (product?.price || 0) * (order.quantity || 1);
-      
-      return `
-        <tr>
-          <td class="product-name-cell">${product?.name || 'Produit'}</td>
-          <td class="nowrap">${product?.volume_ml || '-'} ml</td>
-          <td>
-            <div class="ref-container">
-              ${product?.lot_number ? `<span>L: ${product.lot_number}</span>` : ''}
-              ${product?.reference_code ? `<span>R: ${product.reference_code}</span>` : ''}
-            </div>
-          </td>
-          <td class="nowrap">${product?.provenance || 'N/A'}</td>
-          <td class="text-right font-bold">${order.quantity || 1}</td>
-          
-        </tr>
-      `;
-    }).join('')}
-  </tbody>
-</table>
-
-<style>
-  .products-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-    table-layout: auto; /* Laisse le tableau s'ajuster */
-  }
-
-  .products-table th {
-    background: #f8fafc;
-    color: #64748b;
-    font-size: 7.5pt;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 8px 10px;
-    border-bottom: 2px solid #1e293b;
-    text-align: left;
-  }
-
-  .products-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #f1f5f9;
-    font-size: 8.5pt;
-    color: #1e293b;
-    vertical-align: middle;
-    white-space: nowrap; /* Empêche les retours à la ligne par défaut */
-  }
-
-  /* Colonne produit autorisée à s'étendre */
-  .product-name-cell {
-    white-space: normal !important; /* Permet le retour à la ligne uniquement pour le nom long */
-    font-weight: 600;
-    min-width: 150px;
-  }
-
-  .ref-container {
-    display: flex;
-    gap: 8px;
-    font-size: 7.5pt;
-    color: #64748b;
-  }
-
-  .ref-container span {
-    background: #f1f5f9;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
-  .text-right { text-align: right !important; }
-  .font-bold { font-weight: 700; }
-  .nowrap { white-space: nowrap; }
-
-  /* Évite que le tableau ne soit coupé par le footer fixe */
-  body {
-    padding-bottom: 180px; 
-  }
-</style>
-  </div>
-<div class="document">
-
-  <!-- HEADER -->
-  <div class="header-section">...</div>
-
-  <!-- PRODUITS -->
-  <div class="products-section">...</div>
-
-  <!-- BAS -->
-  <div class="totals-section">
-
- 
-
-    <!-- Signature -->
-    <div class="stamp-section">
-      <div class="signature-area">
-        <div class="signature-line"></div>
-        <div>Cachet et signature</div>
-        <div style="margin-top: 10px; font-size: 8pt;">Bon à servir</div>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      BL ${deliveryNoteNumber} - Généré le ${new Date().toLocaleString('fr-FR')} - Document commercial — Non assujetti à la TVA
-    </div>
-
-  </div>
-
-</div>
-  <script>
-    window.onload = () => {
-      window.print();
-      setTimeout(() => window.close(), 500);
-    }
-  </script>
-</body>
-</html>`;
-
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
-
-      if (sendDocsByEmail) void sendDeliveryNoteEmail(group, clientInfo, deliveryNoteNumber, dateFormatted)
+      const htmlContent = renderTemplate(template, replacements)
+      const printWindow = window.open('', '_blank', 'width=1000,height=720')
+      if (!printWindow) {
+        alert('Veuillez autoriser les popups')
+        return
+      }
+      printWindow.document.write(htmlContent)
+      printWindow.document.close()
+
+      if (sendDocsByEmail) void sendDeliveryNoteEmail(group, clientInfo, deliveryNumber, formattedDate)
     } catch (error) {
-      console.error('Erreur lors de la génération du bon de livraison:', error);
-      alert('Erreur lors de la génération du bon de livraison');
+      console.error('Erreur lors de la génération du bon de livraison:', error)
+      alert('Erreur lors de la génération du bon de livraison')
     }
-  };
+  }
 
   const filteredGroups = orderGroups.filter(group => statusFilter === 'all' || group.status === statusFilter);
   const paginatedGroups = filteredGroups.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -1778,7 +1439,7 @@ useEffect(() => {
                   <div>
                     <p className="text-xs text-blue-700 mb-1">Nom</p>
                     <p className="font-semibold text-gray-900 text-lg">
-                      {selectedGroup.client?.name || 'Client'}
+                      {selectedGroup.client?.name || 'Médecin'}
                     </p>
                   </div>
                   {selectedGroup.client?.phone && (
